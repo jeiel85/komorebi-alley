@@ -67,6 +67,14 @@ const BUBBLE_STYLE: Record<Mood, { bg: string; border: string; ink: string }> = 
   think: { bg: '#fffbe6', border: '#e7c27d', ink: '#5b4a2a' },
 };
 
+const FIREWORK_COLORS = ['#ff6b6b', '#ffd93d', '#6bcbff', '#c77dff', '#7dffb3'];
+
+/** 불꽃 색 하나를 고른다. except를 주면 그 색은 뺀다. */
+function fireworkColor(except?: string): string {
+  const pool = FIREWORK_COLORS.filter((c) => c !== except);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 const FONT = "Jua, 'Gowun Dodum', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif";
 /** 한 화면에 동시에 띄울 말풍선 수 */
 const MAX_BUBBLES = 8;
@@ -92,6 +100,10 @@ export class Renderer {
   private wisps: Particle[] = [];
   private wispAcc = new Map<number, number>();
   private fireworks: Particle[] = [];
+  /** 쏘아 올리는 중인 불꽃. life가 다하면 그 자리에서 터진다. */
+  private shells: Particle[] = [];
+  /** 터지는 순간의 섬광. size는 반지름이다. */
+  private flashes: Particle[] = [];
   private nextFirework = 0;
   private displayY = new Map<number, number>();
 
@@ -226,35 +238,84 @@ export class Renderer {
       w.fillStyle = cloudCol;
       w.fillRect(Math.round(cx - size * 2 + 2), Math.round(cy + 2), size * 4 - 3, size - 1);
     }
-    for (const p of this.fireworks) {
-      const a = 1 - p.age / p.life;
-      w.globalCompositeOperation = 'lighter';
-      w.fillStyle = rgba(p.color, a);
-      w.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
-      w.globalCompositeOperation = 'source-over';
+    this.drawFireworks(w);
+  }
+
+  private drawFireworks(w: Ctx): void {
+    w.globalCompositeOperation = 'lighter';
+    for (const f of this.flashes) {
+      const a = 1 - f.age / f.life;
+      const grad = w.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.size);
+      grad.addColorStop(0, rgba(mix('#ffffff', f.color, 0.4), 0.5 * a));
+      grad.addColorStop(1, rgba(f.color, 0));
+      w.fillStyle = grad;
+      w.fillRect(f.x - f.size, f.y - f.size, f.size * 2, f.size * 2);
     }
+    for (const s of this.shells) {
+      // 올라가는 불씨와 짧은 꼬리
+      for (let k = 0; k < 4; k++) {
+        w.fillStyle = rgba('#ffe9b0', 0.9 - k * 0.22);
+        w.fillRect(Math.round(s.x - s.vx * k * 0.03), Math.round(s.y - s.vy * k * 0.03), 1, k === 0 ? 2 : 1);
+      }
+    }
+    for (const p of this.fireworks) {
+      const k = p.age / p.life;
+      // 꺼질 무렵에는 깜빡이며 사라진다
+      const twinkle = k > 0.6 && hash01(p.seed + Math.floor(this.t * 14)) < 0.45 ? 0.25 : 1;
+      const a = (1 - k) * twinkle;
+      // 지나온 자리에 옅은 잔상을 남겨, 빠르게 퍼질 때는 선처럼 보인다
+      w.fillStyle = rgba(p.color, a * 0.3);
+      w.fillRect(Math.round(p.x - p.vx * 0.08), Math.round(p.y - p.vy * 0.08), 1, 1);
+      w.fillStyle = rgba(p.color, a * 0.55);
+      w.fillRect(Math.round(p.x - p.vx * 0.04), Math.round(p.y - p.vy * 0.04), 1, 1);
+      w.fillStyle = rgba(p.age < 0.12 ? '#ffffff' : p.color, a);
+      w.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size);
+    }
+    w.globalCompositeOperation = 'source-over';
   }
 
   private updateFireworks(game: Game, dt: number): void {
     const active = game.season === 'summer' && game.festival && game.phase === 'business' && game.time >= 18.5 * 60;
     if (active && this.t >= this.nextFirework) {
-      this.nextFirework = this.t + 0.9 + Math.random() * 0.9;
-      const cx = 40 + Math.random() * 300;
-      const cy = 18 + Math.random() * 40;
-      const color = ['#ff6b6b', '#ffd93d', '#6bcbff', '#c77dff', '#7dffb3'][Math.floor(Math.random() * 5)];
-      for (let i = 0; i < 34; i++) {
-        const a = (i / 34) * Math.PI * 2;
-        const v = 18 + Math.random() * 16;
-        this.fireworks.push({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, age: 0, life: 1.2 + Math.random() * 0.6, color, size: 1, seed: i });
-      }
+      this.nextFirework = this.t + 0.7 + Math.random() * 0.7;
+      // 지붕 너머에서 쏘아 올려, 양쪽 나뭇가지에 가리지 않는 하늘 가운데에서 터뜨린다
+      const flight = 0.6 + Math.random() * 0.3;
+      const burstY = 26 + Math.random() * 22;
+      this.shells.push({ x: 96 + Math.random() * 192, y: 104, vx: (Math.random() - 0.5) * 8, vy: (burstY - 104) / flight, age: 0, life: flight, color: fireworkColor(), size: 1, seed: 0 });
     }
+    for (const s of this.shells) {
+      s.age += dt;
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      if (s.age >= s.life) this.burst(s);
+    }
+    this.shells = this.shells.filter((s) => s.age < s.life);
+    // 공기 저항으로 퍼지다 멈칫하고, 중력으로 천천히 처진다
+    const drag = Math.exp(-1.6 * dt);
     for (const p of this.fireworks) {
       p.age += dt;
-      p.vy += 16 * dt;
+      p.vx *= drag;
+      p.vy = p.vy * drag + 14 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
     }
     this.fireworks = this.fireworks.filter((p) => p.age < p.life);
+    for (const f of this.flashes) f.age += dt;
+    this.flashes = this.flashes.filter((f) => f.age < f.life);
+  }
+
+  private burst(s: Particle): void {
+    const ring = (count: number, speed: number, color: string): void => {
+      for (let i = 0; i < count; i++) {
+        const a = ((i + Math.random() * 0.4) / count) * Math.PI * 2;
+        const v = speed * (0.85 + Math.random() * 0.3);
+        this.fireworks.push({ x: s.x, y: s.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, age: 0, life: 1.4 + Math.random() * 0.6, color, size: 2, seed: Math.floor(Math.random() * 1e6) });
+      }
+    };
+    ring(40, 42, s.color);
+    // 절반은 안쪽에 다른 색 고리를 하나 더 둔다
+    if (Math.random() < 0.5) ring(16, 20, fireworkColor(s.color));
+    this.flashes.push({ x: s.x, y: s.y, vx: 0, vy: 0, age: 0, life: 0.4, color: s.color, size: 30, seed: 0 });
   }
 
   // ---------------------------------------------------------- 배경
