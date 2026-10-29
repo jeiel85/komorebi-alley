@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "description": "코지 골목 상권 경영 시뮬레이션 프로토타입 — 날씨·계절 유동인구, 향기 시너지, 길고양이",
-  "homepage": "https://jeiel85.github.io/komorebi-alley/",
+  "license": "MIT",
+  "homepage":"https://jeiel85.github.io/komorebi-alley/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jeiel85/komorebi-alley.git"

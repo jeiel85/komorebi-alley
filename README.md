@@ -17,6 +17,7 @@
 ![Vite](https://img.shields.io/badge/Vite-8-646cff?logo=vite&logoColor=white)
 ![Canvas 2D](https://img.shields.io/badge/Canvas_2D-pixel_art-8a6d4b)
 ![status](https://img.shields.io/badge/status-%ED%94%84%EB%A1%9C%ED%86%A0%ED%83%80%EC%9E%85-f2c14e)
+[![License: MIT](https://img.shields.io/badge/license-MIT-3d5a45)](LICENSE)
 
 <br>
 
@@ -165,3 +166,7 @@ scripts/balance.ts  밸런스 점검
 - 손님은 한 줄 보도 위를 왼쪽·오른쪽으로만 걷습니다.
 
 다음 작업 후보는 [BACKLOG.md](BACKLOG.md)에 있습니다.
+
+## 라이선스
+
+[MIT](LICENSE). 코드와, 코드로 그리는 픽셀 아트 모두에 적용됩니다. 글꼴(Jua, Gowun Dodum)은 저장소에 들어 있지 않고 Google Fonts에서 불러오며, 각 글꼴의 라이선스(SIL Open Font License)를 따릅니다.
