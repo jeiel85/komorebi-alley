@@ -2,12 +2,20 @@ import './ui/style.css';
 import { GAME_MIN_PER_SEC } from './sim/data.ts';
 import { Game } from './sim/game.ts';
 import { Renderer } from './render/renderer.ts';
+import { hasCrashed, installCrashGuard } from './ui/crash.ts';
 import { loadStoredSave, storeSave } from './ui/storage.ts';
 import { UI } from './ui/ui.ts';
 
 function randomSeed(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0];
 }
+
+// 처리되지 않은 오류는 게임을 멈추고 안내 화면을 띄운다(ui가 만들어지기 전 오류면 상황 정보 없이 보고된다)
+installCrashGuard(() => {
+  const g = ui.game;
+  const clock = `${Math.floor(g.time / 60)}:${String(Math.floor(g.time % 60)).padStart(2, '0')}`;
+  return `${g.s.day}일차 · ${g.phase} · ${clock} · ${g.s.today.weather} ${g.s.today.temp}℃ · 가게 ${g.s.buildings.length}곳`;
+});
 
 const renderer = new Renderer(document.getElementById('world') as HTMLCanvasElement, document.getElementById('overlay') as HTMLCanvasElement);
 const loaded = loadStoredSave();
@@ -21,6 +29,7 @@ if (import.meta.env.DEV) Object.assign(window, { komorebi: { ui, renderer } });
 
 let last = performance.now();
 function frame(now: number): void {
+  if (hasCrashed()) return;
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const speed = ui.effectiveSpeed();

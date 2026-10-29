@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # 워크플로의 액션은 커밋 SHA로 고정돼 있어, 새 버전이 나오면 Dependabot이 SHA와 버전 주석을 함께 올려 준다
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

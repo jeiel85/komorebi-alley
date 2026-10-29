@@ -654,3 +654,29 @@ textarea.code {
     bottom: 12px;
   }
 }
+
+/* 오류로 멈췄을 때 안내 */
+.modal-backdrop.crash {
+  position: fixed;
+  z-index: 100;
+}
+.crash p {
+  margin: 6px 0 10px;
+  line-height: 1.6;
+}
+.crash a {
+  color: var(--accent);
+}
+.crash pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
