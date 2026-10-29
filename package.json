@@ -1,0 +1,25 @@
+{
+  "name": "komorebi-alley",
+  "private": true,
+  "version": "0.1.0",
+  "description": "코지 골목 상권 경영 시뮬레이션 프로토타입 — 날씨·계절 유동인구, 향기 시너지, 길고양이",
+  "homepage": "https://jeiel85.github.io/komorebi-alley/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeiel85/komorebi-alley.git"
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "balance": "node scripts/balance.ts"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
