@@ -35,12 +35,12 @@
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/screenshots/summer.png" alt="여름 폭염 한낮의 골목. 빙수 가판대와 자판기 앞에 손님이 몰려 있다." /></td>
+    <td width="33%"><img src="docs/screenshots/fireworks.png" alt="여름 불꽃놀이 축제 날 밤의 골목. 지붕 위 밤하늘에 파랑·분홍 불꽃이 터지고, 불 켜진 가게 앞을 손님들이 지나간다." /></td>
     <td width="33%"><img src="docs/screenshots/rain.png" alt="비 오는 가을 저녁. 우산을 쓴 손님들 위로 가게 창문과 등롱에 불이 켜져 있다." /></td>
     <td width="33%"><img src="docs/screenshots/winter.png" alt="눈 내리는 겨울 저녁. 분홍빛 하늘 아래 등롱이 빛나고 손님들이 우산을 쓰고 지나간다." /></td>
   </tr>
   <tr>
-    <td align="center"><b>여름 · 폭염 35℃</b><br><sub>빙수와 차가운 음료가 잘 팔리는 한낮</sub></td>
+    <td align="center"><b>여름 · 불꽃놀이 축제</b><br><sub>저녁엔 손님이 크게 늘고 밤하늘에 불꽃이 터진다</sub></td>
     <td align="center"><b>가을 · 비 오는 저녁</b><br><sub>처마 있는 가게와 라멘 노점에 손님이 몰린다</sub></td>
     <td align="center"><b>겨울 · 눈 오는 저녁</b><br><sub>겨울엔 등롱 효과가 두 배가 된다</sub></td>
   </tr>
