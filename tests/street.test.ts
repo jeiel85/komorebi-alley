@@ -13,7 +13,7 @@ import {
   type Building,
 } from '../src/sim/street.ts';
 
-const b = (uid: number, type: Building['type'], x: number): Building => ({ uid, type, x, tuning: 5, price: 0, rating: 0.5 });
+const b = (uid: number, type: Building['type'], x: number): Building => ({ uid, type, x, tuning: 5, price: 0, rating: 0.5, level: 1 });
 
 describe('배치', () => {
   const unlocked = initialUnlocked();

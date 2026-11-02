@@ -411,7 +411,27 @@ export class Renderer {
       if (game.s.unlocked[tile]) drawEmptyLot(c, tile * TILE_PX, TILE_PX, env);
       else drawLockedLot(c, tile * TILE_PX, TILE_PX, env);
     }
-    for (const b of game.s.buildings) drawBuilding(c, b.type, b.x * TILE_PX, env, lights, b.tuning);
+    for (const b of game.s.buildings) {
+      drawBuilding(c, b.type, b.x * TILE_PX, env, lights, b.tuning);
+      if (b.level > 1) this.drawLevelPlaque(c, b.x * TILE_PX, b.level);
+    }
+  }
+
+  /** 업그레이드한 가게 왼쪽 기둥에 건 작은 나무 명판. 금색 별 하나가 레벨 하나다. */
+  private drawLevelPlaque(c: Ctx, x0: number, level: number): void {
+    const n = level - 1;
+    const w = 2 + n * 4;
+    const y = G - 16;
+    px(c, x0 + 2, y - 2, 1, 2, '#3a2418');
+    px(c, x0 + 1, y, w + 2, 7, '#3a2418');
+    px(c, x0 + 2, y + 1, w, 5, '#a06a3c');
+    for (let i = 0; i < n; i++) {
+      const sx = x0 + 3 + i * 4;
+      px(c, sx, y + 2, 3, 3, '#f2c14e');
+      px(c, sx + 1, y + 1, 1, 5, '#f2c14e');
+      px(c, sx, y + 3, 3, 1, '#ffe08a');
+      px(c, sx + 1, y + 2, 1, 1, '#fff6cc');
+    }
   }
 
   private drawGround(c: Ctx, season: SeasonId, weather: WeatherId): void {
@@ -479,7 +499,7 @@ export class Renderer {
     const alive = new Set<number>();
     for (const p of game.peds) {
       alive.add(p.id);
-      const target = p.state === 'counter' || p.state === 'inside' ? G + 4 : p.state === 'resting' ? G + 1 : WALK_Y + p.lane;
+      const target = p.state === 'counter' || p.state === 'inside' ? G + 4 : p.state === 'resting' ? G + 1 : p.state === 'browse' ? G + 6 : WALK_Y + p.lane;
       const prev = this.displayY.get(p.id) ?? target;
       const y = prev + (target - prev) * Math.min(1, dt * 10);
       this.displayY.set(p.id, y);

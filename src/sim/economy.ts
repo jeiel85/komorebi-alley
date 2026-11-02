@@ -1,4 +1,4 @@
-import { RESIDENT_INFO, WEATHER_INFO, shopDef, type ResidentType, type SeasonId, type ShopDef, type WeatherId } from './data.ts';
+import { RESIDENT_INFO, UPGRADE_PAY_MUL, UPGRADE_VISIT_MUL, WEATHER_INFO, shopDef, type ResidentType, type SeasonId, type ShopDef, type WeatherId } from './data.ts';
 import { clamp } from './rng.ts';
 import { synergyEffects, type Building } from './street.ts';
 import { demandMod } from './weather.ts';
@@ -62,15 +62,16 @@ export function visitProbability(ctx: MarketContext, shopper: Shopper, b: Buildi
     (1 + AROMA_VISIT_BONUS * aroma) *
     syn.visit *
     (0.55 + 0.9 * b.rating) *
+    UPGRADE_VISIT_MUL ** (b.level - 1) *
     repeat *
     umbrella *
     (shopper.fan ? 1.15 : 1);
   return clamp(p, 0, 0.85);
 }
 
-/** 이 손님이 기꺼이 낼 수 있는 가격 */
-export function maxPay(ctx: MarketContext, shopper: Shopper, def: ShopDef): number {
-  let m = def.price.ref * RESIDENT_INFO[shopper.type].budget * shopper.budgetVar;
+/** 이 손님이 그 가게에서 기꺼이 낼 수 있는 가격 */
+export function maxPay(ctx: MarketContext, shopper: Shopper, def: ShopDef, level = 1): number {
+  let m = def.price.ref * RESIDENT_INFO[shopper.type].budget * shopper.budgetVar * UPGRADE_PAY_MUL ** (level - 1);
   if (WEATHER_INFO[ctx.weather].umbrella && def.shelter) m *= 1.1;
   if (shopper.fan) m *= 1.15;
   if (ctx.festival) m *= 1.1;
@@ -78,7 +79,7 @@ export function maxPay(ctx: MarketContext, shopper: Shopper, def: ShopDef): numb
 }
 
 export function wouldRefuse(ctx: MarketContext, shopper: Shopper, b: Building): boolean {
-  return b.price > maxPay(ctx, shopper, shopDef(b.type)) * REFUSE_RATIO;
+  return b.price > maxPay(ctx, shopper, shopDef(b.type), b.level) * REFUSE_RATIO;
 }
 
 /** 가격 점수: 지불 의향의 75% 이하면 1, 100%면 0.6, REFUSE_RATIO에서 0 */
@@ -116,7 +117,7 @@ export function evaluatePurchase(ctx: MarketContext, shopper: Shopper, b: Buildi
   const ideal = idealTuning(def, shopper.type, ctx.temp, shopper.idealVar);
   const diff = b.tuning - ideal;
   const taste = tasteScore(b.tuning, ideal);
-  const price = priceScore(b.price, maxPay(ctx, shopper, def));
+  const price = priceScore(b.price, maxPay(ctx, shopper, def, b.level));
   const satisfaction = clamp(0.55 * taste + 0.45 * price + syn.satisfaction, 0, 1);
   const revenue = Math.round((b.price * syn.spend) / 10) * 10;
 

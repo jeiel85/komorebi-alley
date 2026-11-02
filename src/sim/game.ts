@@ -48,22 +48,25 @@ import { eunNeun, iGa } from './josa.ts';
 import { Rng, clamp } from './rng.ts';
 import {
   buildingAtTile,
+  capacityOf,
   checkPlacement,
   checkUnlock,
   doorX,
   extraUnlockedCount,
   initialUnlocked,
+  investedCost,
   isShop,
   positiveSynergyKinds,
   spanOf,
   synergyEffects,
   unlockCost,
+  upgradeCost,
   type Building,
 } from './street.ts';
 import { demandMod, isFestivalDay, lanternBoost, residentMod, rollWeather, seasonOf, trafficMod, type DayWeather } from './weather.ts';
 
 export type Phase = 'prep' | 'business' | 'accounting';
-export type PedState = 'walk' | 'inside' | 'counter' | 'petting' | 'resting' | 'sniff';
+export type PedState = 'walk' | 'inside' | 'counter' | 'petting' | 'resting' | 'sniff' | 'browse';
 
 export interface Bubble {
   text: string;
@@ -76,8 +79,9 @@ export interface Bubble {
 export interface Pedestrian extends Shopper {
   id: number;
   x: number;
-  /** 보도 위 세로 줄(0~9). 그리기 순서와 높이에만 쓴다. */
+  /** 보도 위 세로 위치(0 = 가게 쪽 ~ LANES - 1 = 차도 쪽, 소수). 걸으며 laneTarget으로 옮겨 간다. 문 앞 판정에는 쓰지 않는다. */
   lane: number;
+  laneTarget: number;
   dir: 1 | -1;
   speed: number;
   state: PedState;
@@ -206,6 +210,17 @@ export type GameEvent =
 
 export type ActionResult = { ok: true } | { ok: false; reason: string };
 
+/** 보도 세로 줄 수(lane 0 ~ LANES - 1) */
+export const LANES = 10;
+/** 세로로 옮겨 가는 속도(줄/게임분) */
+const LANE_SPEED = 1.6;
+/** 걷다가 괜히 줄을 바꿀 확률(게임분당) */
+const LANE_WANDER = 0.06;
+/** 앞사람과 이만큼(px) 가까워지면 비켜 간다 */
+const PASS_GAP = 10;
+/** 들르지 않은 가게 앞에서 잠깐 구경할 확률 */
+const BROWSE_CHANCE = 0.08;
+
 const OK: ActionResult = { ok: true };
 const fail = (reason: string): ActionResult => ({ ok: false, reason });
 const FEEDBACK_KEEP = 8;
@@ -329,7 +344,7 @@ export class Game {
 
   refundOf(uid: number): number {
     const b = this.building(uid);
-    return b ? Math.floor(BUILDINGS[b.type].cost * DEMOLISH_REFUND) : 0;
+    return b ? Math.floor(investedCost(b) * DEMOLISH_REFUND) : 0;
   }
 
   drainEvents(): GameEvent[] {
@@ -354,6 +369,7 @@ export class Game {
       tuning: def.kind === 'shop' ? 5 : 0,
       price: def.kind === 'shop' ? def.price.base : 0,
       rating: 0.5,
+      level: 1,
     });
     this.s.buildings.sort((a, b) => a.x - b.x);
     if (positiveSynergyKinds(this.s.buildings) >= 3) this.achieve('synergy3');
@@ -374,6 +390,18 @@ export class Game {
     this.s.buildings = this.s.buildings.filter((q) => q.uid !== uid);
     this.s.money += refund;
     this.feedback.delete(uid);
+    return OK;
+  }
+
+  upgrade(uid: number): ActionResult {
+    if (this.phase === 'accounting') return fail('결산 중에는 손볼 수 없어요');
+    const b = this.building(uid);
+    if (!b) return fail('건물을 찾을 수 없어요');
+    const cost = upgradeCost(b);
+    if (cost === null) return fail(isShop(b) ? '이미 최고 레벨이에요' : '가게만 업그레이드할 수 있어요');
+    if (this.s.money < cost) return fail('돈이 부족해요');
+    this.s.money -= cost;
+    b.level += 1;
     return OK;
   }
 
@@ -513,11 +541,13 @@ export class Game {
     const weather = WEATHER_INFO[this.s.today.weather];
     const dir: 1 | -1 = this.rng.chance(0.5) ? 1 : -1;
     const x = dir === 1 ? -12 : STREET_PX + 12;
+    const lane = this.homeLane(dir);
     this.peds.push({
       id: this.nextPedId++,
       type,
       x,
-      lane: this.rng.int(0, 9),
+      lane,
+      laneTarget: lane,
       dir,
       speed: this.rng.range(info.speed[0], info.speed[1]) * (weather.umbrella ? 1.1 : 1),
       state: 'walk',
@@ -552,6 +582,7 @@ export class Game {
       const prevX = p.x;
       p.x += p.dir * p.speed * dt;
       p.walkPhase += p.speed * dt;
+      this.steerLane(p, dt);
       this.crossDoors(p, prevX);
       if (p.state !== 'walk') return true;
       const tile = Math.floor(p.x / TILE_PX);
@@ -577,8 +608,12 @@ export class Game {
         p.target = null;
       }
     } else if (p.state === 'sniff') {
-      // target은 그대로 둔다: 되돌아가서 들른다
+      // target은 그대로 둔다: 되돌아가서 들른다. 가게 쪽으로 붙어 걷는다.
       p.state = 'walk';
+      p.laneTarget = 0;
+    } else if (p.state === 'browse') {
+      p.state = 'walk';
+      p.laneTarget = this.homeLane(p.dir);
     } else {
       p.state = 'walk';
       p.target = null;
@@ -612,11 +647,19 @@ export class Game {
     const ctx = this.market();
     if (!forced && !this.rng.chance(visitProbability(ctx, p, b, p.aroma[b.uid] ?? 0))) {
       p.passed.push(b.uid);
+      if (this.rng.chance(BROWSE_CHANCE)) {
+        // 들어가진 않고 진열대 앞에 잠깐 멈춰 구경한다
+        p.state = 'browse';
+        p.timer = this.rng.range(1.5, 3);
+        p.lane = Math.min(p.lane, 1);
+        p.laneTarget = 0;
+      }
       return;
     }
     const st = this.shopStats(b.uid);
     const occupied = this.occupancy(b.uid);
-    if (occupied >= def.capacity) {
+    const capacity = capacityOf(b);
+    if (occupied >= capacity) {
       st.reasons.full = (st.reasons.full ?? 0) + 1;
       p.happiness = clamp(p.happiness - 2, 0, 100);
       this.say(p, '자리가 없네…', 'sad');
@@ -636,7 +679,7 @@ export class Game {
     p.state = def.indoor ? 'inside' : 'counter';
     p.target = b.uid;
     p.timer = def.serviceMin * synergyEffects(ctx.buildings, b).dwell * this.rng.range(0.8, 1.2);
-    p.x = doorX(b) + (def.indoor ? 0 : (occupied - (def.capacity - 1) / 2) * 5);
+    p.x = doorX(b) + (def.indoor ? 0 : (occupied - (capacity - 1) / 2) * 5);
     st.visits += 1;
   }
 
@@ -646,6 +689,9 @@ export class Game {
     p.state = 'walk';
     p.target = null;
     p.purchases += 1;
+    // 문에서 나와 다시 보도로 걸어 나간다
+    p.lane = 0;
+    p.laneTarget = this.homeLane(p.dir);
     p.happiness = clamp(p.happiness + out.happinessDelta, 0, 100);
     this.s.money += out.revenue;
     st.revenue += out.revenue;
@@ -893,6 +939,39 @@ export class Game {
       rt.state = 'sleep';
       rt.timer = this.rng.range(40, 90);
     }
+  }
+
+  // ------------------------------------------------------------ 보도 위 움직임
+
+  /** 진행 방향에 따라 즐겨 걷는 쪽(오른쪽으로 가면 차도 쪽, 왼쪽으로 가면 가게 쪽)에서 한 줄을 고른다 */
+  private homeLane(dir: 1 | -1): number {
+    return dir === 1 ? this.rng.range(3, LANES - 1) : this.rng.range(0, 6);
+  }
+
+  /** 앞사람을 비켜 가거나, 마주 오는 사람을 피하거나, 가끔 괜히 줄을 바꾼다 */
+  private steerLane(p: Pedestrian, dt: number): void {
+    if (p.target === null) {
+      let blocker: Pedestrian | null = null;
+      for (const q of this.peds) {
+        if (q === p || q.state === 'inside') continue;
+        const ahead = (q.x - p.x) * p.dir;
+        if (ahead <= 0 || ahead > PASS_GAP || Math.abs(q.lane - p.lane) >= 1.5) continue;
+        // 같은 방향이면 느린 사람만, 마주 오면 누구든 비켜 간다
+        if (q.state === 'walk' && q.dir === p.dir && q.speed >= p.speed) continue;
+        if (!blocker || (q.x - p.x) * p.dir < (blocker.x - p.x) * p.dir) blocker = q;
+      }
+      if (blocker && Math.abs(p.laneTarget - blocker.lane) < 1.5) {
+        const up = blocker.lane - 2.5;
+        const down = blocker.lane + 2.5;
+        const preferDown = p.dir === 1 ? down <= LANES - 1 : up < 0;
+        p.laneTarget = clamp(preferDown ? down : up, 0, LANES - 1);
+      } else if (this.rng.chance(LANE_WANDER * dt)) {
+        p.laneTarget = clamp(p.laneTarget + this.rng.range(-2, 2), 0, LANES - 1);
+      }
+    }
+    const d = p.laneTarget - p.lane;
+    const step = LANE_SPEED * dt;
+    p.lane = Math.abs(d) <= step ? p.laneTarget : p.lane + Math.sign(d) * step;
   }
 
   // ------------------------------------------------------------ 보조

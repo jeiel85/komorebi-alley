@@ -5,12 +5,16 @@ import {
   GOALS,
   GOAL_IDS,
   GROUND_Y,
+  MAX_SHOP_LEVEL,
   PROP_IDS,
   RESIDENT_INFO,
   SEASON_INFO,
   SHOP_IDS,
   STREET_TILES,
   TILE_PX,
+  UPGRADE_CAPACITY,
+  UPGRADE_PAY_MUL,
+  UPGRADE_VISIT_MUL,
   WEATHER_INFO,
   type BuildingType,
   type SeasonId,
@@ -20,8 +24,9 @@ import { Game, emptyShopStats, type DayReport, type GameEvent } from '../sim/gam
 import { catCapacity } from '../sim/cats.ts';
 import { iGa } from '../sim/josa.ts';
 import { SaveError, parseSave, serializeSave } from '../sim/save.ts';
-import { buildingAtTile, synergyEffects, widthOf, type Building } from '../sim/street.ts';
+import { buildingAtTile, capacityOf, synergyEffects, upgradeCost, widthOf, type Building } from '../sim/street.ts';
 import { dayInSeason, forecastNotes, type DayWeather } from '../sim/weather.ts';
+import { Sound } from '../audio/sound.ts';
 import { makePostcard } from '../render/postcard.ts';
 import { Renderer, type ViewState } from '../render/renderer.ts';
 import { BUILDING_HEIGHT, drawBuilding } from '../render/sprites.ts';
@@ -90,6 +95,7 @@ export class UI {
   private saveFailedNotified = false;
   private lastMoney = -1;
   private seedFn: () => number;
+  readonly sound = new Sound();
 
   constructor(game: Game, renderer: Renderer, seedFn: () => number) {
     this.game = game;
@@ -100,6 +106,7 @@ export class UI {
     this.bindPointer();
     this.bindKeys();
     this.bindResize();
+    this.bindSound();
     this.renderPrepCard();
   }
 
@@ -111,6 +118,7 @@ export class UI {
 
   update(dt: number): void {
     for (const e of this.game.drainEvents()) this.handleEvent(e);
+    this.sound.update(this.game);
     this.updateHud();
     this.inspectorTimer -= dt;
     if (this.inspectorUid !== null && this.inspectorTimer <= 0) {
@@ -166,16 +174,19 @@ export class UI {
         this.toast(e.icon, e.text);
         break;
       case 'goal':
+        this.sound.goal();
         this.toast('🏅', `목표 달성: ${GOALS[e.id].name} — ${GOALS[e.id].desc}`);
         break;
       case 'phase':
         this.renderPrepCard();
         break;
       case 'dayEnd':
+        this.sound.closingBell();
         this.setMode({ kind: 'none' });
         if (this.game.report) this.showReport(this.game.report);
         break;
       case 'newDay':
+        this.sound.morning();
         this.persist();
         this.prepCollapsed = false;
         this.renderPrepCard();
@@ -185,6 +196,7 @@ export class UI {
         }
         break;
       case 'mascot':
+        this.sound.closingBell();
         this.banner('🔔 딸랑, 방울 소리', `${e.name}${iGa(e.name)} 골목의 마스코트가 되었어요! 고양이를 보러 관광객 팬이 찾아와요.`);
         break;
     }
@@ -351,6 +363,7 @@ export class UI {
         this.toast('🚧', res.reason);
         return;
       }
+      this.sound.build();
       if (g.phase === 'prep') this.persist();
       const placed = g.s.buildings.find((b) => b.type === mode.type && b.x === this.view.ghostX);
       this.setMode({ kind: 'none' });
@@ -389,6 +402,29 @@ export class UI {
     this.select(this.view.hoverUid);
   }
 
+  // ---------------------------------------------------------- 소리
+
+  private bindSound(): void {
+    // 브라우저는 사용자 입력이 있어야 소리를 내게 해 준다
+    const unlock = (): void => this.sound.unlock();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    $('btn-sound').addEventListener('click', () => this.toggleSound());
+    this.refreshSoundButton();
+  }
+
+  private toggleSound(): void {
+    this.sound.setEnabled(!this.sound.enabled);
+    this.refreshSoundButton();
+  }
+
+  private refreshSoundButton(): void {
+    const btn = $('btn-sound');
+    btn.textContent = this.sound.enabled ? '🔊' : '🔇';
+    btn.title = this.sound.enabled ? '소리 끄기 (M)' : '소리 켜기 (M)';
+    btn.setAttribute('aria-pressed', String(this.sound.enabled));
+  }
+
   // ---------------------------------------------------------- 키보드·크기
 
   private bindKeys(): void {
@@ -407,6 +443,8 @@ export class UI {
         this.setSpeed(Number(e.key));
       } else if (e.key === 'p' || e.key === 'P') {
         this.takePhoto();
+      } else if (e.key === 'm' || e.key === 'M') {
+        this.toggleSound();
       }
     });
   }
@@ -520,6 +558,8 @@ export class UI {
         <label class="slider"><div class="slider-head"><span>가격</span><output data-f="price-out"></output></div>
           <input type="range" min="${def.price.min}" max="${def.price.max}" step="${def.price.step}" data-f="price" />
           <div class="slider-ends"><span>${yen(def.price.min)}</span><span>${yen(def.price.max)}</span></div></label>
+        <div class="upgrade"><span data-f="level"></span><button data-f="upgrade"></button></div>
+        <p class="note" data-f="upgrade-note"></p>
         <div class="chips" data-f="chips"></div>
         <p class="note" data-f="aroma"></p>
         <h4>손님 목소리</h4>
@@ -549,6 +589,18 @@ export class UI {
       tuning.addEventListener('change', persistIfPrep);
       price.addEventListener('change', persistIfPrep);
       sync();
+      panel.querySelector<HTMLButtonElement>('[data-f="upgrade"]')!.addEventListener('click', () => {
+        const res = this.game.upgrade(b.uid);
+        if (!res.ok) {
+          this.toast('🚧', res.reason);
+          return;
+        }
+        this.sound.upgrade();
+        const cur = this.game.building(b.uid)!;
+        this.toast('🔧', `${def.name} Lv${cur.level} 단장 완료! 값을 조금 올려도 손님이 덜 비싸게 느껴요.`);
+        persistIfPrep();
+        this.refreshInspector();
+      });
     } else {
       panel.insertAdjacentHTML('beforeend', `<p class="note">${esc(def.desc)}</p><div data-f="prop"></div>`);
     }
@@ -586,13 +638,26 @@ export class UI {
       setField(panel, 'customers', String(st.customers));
       setField(panel, 'revenue', yen(st.revenue));
       setField(panel, 'sat', st.customers > 0 ? `${Math.round((st.satisfactionSum / st.customers) * 100)}%` : '–');
+      const cost = upgradeCost(b);
+      setField(panel, 'level', `Lv ${b.level} / ${MAX_SHOP_LEVEL}`);
+      const up = panel.querySelector<HTMLButtonElement>('[data-f="upgrade"]')!;
+      const upLabel = cost === null ? '최고 레벨' : `🔧 업그레이드 ${yen(cost)}`;
+      if (up.textContent !== upLabel) up.textContent = upLabel;
+      up.disabled = cost === null || g.s.money < cost || g.phase === 'accounting';
+      setField(
+        panel,
+        'upgrade-note',
+        cost === null
+          ? '더 손볼 곳이 없을 만큼 단장한 가게예요.'
+          : `다음 레벨: 손님 자리 +${UPGRADE_CAPACITY}, 들를 확률 +${Math.round((UPGRADE_VISIT_MUL - 1) * 100)}%, 손님이 낼 수 있는 값 +${Math.round((UPGRADE_PAY_MUL - 1) * 100)}%`,
+      );
       const syn = synergyEffects(g.s.buildings, b);
       const chips = panel.querySelector('[data-f="chips"]') as HTMLElement;
       const chipHtml = syn.active.map((s) => `<span class="syn${s.negative ? ' bad' : ''}">${s.negative ? '💢' : '✨'} ${esc(s.name)} · ${esc(s.desc)}</span>`).join('');
       if (chips.innerHTML !== chipHtml) chips.innerHTML = chipHtml;
       const aroma = def.aroma
         ? `♨️ ${def.aroma.label}${iGa(def.aroma.label)} ${def.aroma.radius}칸까지 퍼져요. 오늘 향기에 이끌려 되돌아온 손님 ${st.aromaPulls}명.`
-        : `${def.indoor ? '🏠 실내' : '🧺 가판'} · 손님 ${def.capacity}명까지 · 머무는 시간 약 ${Math.round(def.serviceMin * syn.dwell)}분`;
+        : `${def.indoor ? '🏠 실내' : '🧺 가판'} · 손님 ${capacityOf(b)}명까지 · 머무는 시간 약 ${Math.round(def.serviceMin * syn.dwell)}분`;
       setField(panel, 'aroma', aroma);
       const list = g.feedback.get(b.uid) ?? [];
       const fbHtml = list.length
@@ -722,7 +787,7 @@ export class UI {
            <li>가게를 <b>붙여 지으면</b> 시너지가 생겨요(책과 차, 빵과 차, 벤치 간식). 라멘 냄새는 찻집·헌책방이 싫어해요.</li>
            <li>비 오는 날엔 라멘, 폭염엔 빙수와 차가운 자판기, 가을엔 헌책방·붕어빵, 겨울엔 등롱이 빛나요.</li>
            <li>급식소를 놓으면 길고양이가 찾아오고, 손님과 당신이 쓰다듬을 수 있어요. 특별한 고양이도 있다는 소문이…</li>
-           <li>단축키: Space 일시정지 · 1/2/3 속도 · P 엽서 · Esc 취소</li>
+           <li>단축키: Space 일시정지 · 1/2/3 속도 · P 엽서 · M 소리 · Esc 취소</li>
          </ul>
        </details>
        <div class="actions"><button class="primary" data-act="close">닫기</button></div>`,
