@@ -580,7 +580,7 @@ export function drawPerson(c: Ctx, p: PersonDraw): void {
 
   const walking = p.state === 'walk' || p.state === 'sniff';
   const frame = p.state === 'walk' ? Math.floor(p.walkPhase / 2.2) % 4 : 0;
-  const back = p.state === 'counter';
+  const back = p.state === 'counter' || p.state === 'browse';
   const lower = p.state === 'petting' ? 3 : p.state === 'resting' ? 2 : 0;
   const bob = walking && (frame === 1 || frame === 3) ? -1 : 0;
   const hunch = p.type === 'elder' ? 1 : 0;

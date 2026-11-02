@@ -25,7 +25,7 @@ const shopper = (over: Partial<Shopper> = {}): Shopper => ({
   idealVar: 0,
   ...over,
 });
-const ramen = (over: Partial<Building> = {}): Building => ({ uid: 1, type: 'ramen', x: 3, tuning: 7, price: 800, rating: 0.5, ...over });
+const ramen = (over: Partial<Building> = {}): Building => ({ uid: 1, type: 'ramen', x: 3, tuning: 7, price: 800, rating: 0.5, level: 1, ...over });
 const ctx = (over: Partial<MarketContext> = {}): MarketContext => ({
   season: 'spring',
   weather: 'clear',
@@ -103,6 +103,15 @@ describe('가격과 맛', () => {
     expect(maxPay(ctx(), shopper({ type: 'student' }), def)).toBeLessThan(maxPay(ctx(), shopper(), def));
   });
 
+  it('가게 레벨이 오르면 방문 확률과 지불 의향이 오른다', () => {
+    const def = shopDef('ramen');
+    expect(maxPay(ctx(), shopper(), def, 3)).toBeCloseTo(maxPay(ctx(), shopper(), def) * 1.21);
+    expect(visitProbability(ctx(), shopper(), ramen({ level: 2 }), 0)).toBeGreaterThan(visitProbability(ctx(), shopper(), ramen(), 0));
+    const pricey = ramen({ price: 1_000 });
+    expect(wouldRefuse(ctx(), shopper({ type: 'student' }), pricey)).toBe(true);
+    expect(wouldRefuse(ctx(), shopper({ type: 'student' }), { ...pricey, level: 3 })).toBe(false);
+  });
+
   it('지불 의향의 1.35배를 넘으면 사지 않고 돌아선다', () => {
     const pay = maxPay(ctx(), shopper({ type: 'student' }), shopDef('ramen'));
     expect(wouldRefuse(ctx(), shopper({ type: 'student' }), ramen({ price: Math.ceil(pay * REFUSE_RATIO) + 50 }))).toBe(true);
@@ -147,8 +156,8 @@ describe('구매 평가와 말풍선', () => {
   });
 
   it('책과 차 시너지는 객단가를 25% 올린다', () => {
-    const book: Building = { uid: 1, type: 'bookstore', x: 3, tuning: 5, price: 600, rating: 0.5 };
-    const tea: Building = { uid: 2, type: 'teahouse', x: 5, tuning: 3, price: 500, rating: 0.5 };
+    const book: Building = { uid: 1, type: 'bookstore', x: 3, tuning: 5, price: 600, rating: 0.5, level: 1 };
+    const tea: Building = { uid: 2, type: 'teahouse', x: 5, tuning: 3, price: 500, rating: 0.5, level: 1 };
     const out = evaluatePurchase(ctx({ buildings: [book, tea] }), shopper(), tea, 0);
     expect(out.revenue).toBe(630); // 500 × 1.25를 10엔 단위로 반올림
   });

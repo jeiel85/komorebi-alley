@@ -4,6 +4,7 @@ import {
   CAT_BREEDS,
   CAT_PERSONALITIES,
   GOAL_IDS,
+  MAX_SHOP_LEVEL,
   STREET_TILES,
   WEATHERS,
   type BuildingType,
@@ -15,7 +16,7 @@ import { checkPlacement, type Building } from './street.ts';
 import type { DayWeather } from './weather.ts';
 
 export const SAVE_FORMAT = 'komorebi-alley-save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export class SaveError extends Error {}
 
@@ -56,7 +57,13 @@ function weather(v: unknown, name: string): DayWeather {
   return { weather: oneOf(o.weather, `${name}.weather`, WEATHERS), temp: num(o.temp, `${name}.temp`, -40, 60, true) };
 }
 
-/** 저장 파일(JSON 문자열)을 검증해 상태로 되돌린다. 하나라도 어긋나면 SaveError. */
+/** v1 → v2: 가게 레벨이 생겼다. v1의 건물은 모두 Lv1이다. */
+function migrateV1(state: unknown): unknown {
+  if (!isObj(state) || !Array.isArray(state.buildings)) return state;
+  return { ...state, buildings: state.buildings.map((b) => (isObj(b) ? { ...b, level: 1 } : b)) };
+}
+
+/** 저장 파일(JSON 문자열)을 검증해 상태로 되돌린다. 이전 버전은 변환한 뒤 검사한다. 하나라도 어긋나면 SaveError. */
 export function parseSave(text: string): SaveState {
   let raw: unknown;
   try {
@@ -65,8 +72,10 @@ export function parseSave(text: string): SaveState {
     throw new SaveError('JSON 형식이 아니에요');
   }
   if (!isObj(raw) || raw.format !== SAVE_FORMAT) throw new SaveError('코모레비 앨리 저장 파일이 아니에요');
-  if (raw.version !== SAVE_VERSION) throw new SaveError(`지원하지 않는 저장 버전이에요 (${String(raw.version)})`);
-  const st = obj(raw.state, 'state');
+  let stateRaw = raw.state;
+  if (raw.version === 1) stateRaw = migrateV1(stateRaw);
+  else if (raw.version !== SAVE_VERSION) throw new SaveError(`지원하지 않는 저장 버전이에요 (${String(raw.version)})`);
+  const st = obj(stateRaw, 'state');
 
   const unlockedRaw = arr(st.unlocked, 'unlocked');
   if (unlockedRaw.length !== STREET_TILES || !unlockedRaw.every((u) => typeof u === 'boolean')) throw new SaveError('unlocked 값이 올바르지 않아요');
@@ -85,6 +94,7 @@ export function parseSave(text: string): SaveState {
       tuning: num(o.tuning, `buildings[${i}].tuning`, 0, 10, true),
       price: def.kind === 'shop' ? num(o.price, `buildings[${i}].price`, def.price.min, def.price.max, true) : num(o.price, `buildings[${i}].price`, 0, 0),
       rating: num(o.rating, `buildings[${i}].rating`, 0, 1),
+      level: num(o.level, `buildings[${i}].level`, 1, def.kind === 'shop' ? MAX_SHOP_LEVEL : 1, true),
     };
     if (uids.has(b.uid)) throw new SaveError(`건물 번호 ${b.uid}가 중복돼요`);
     const place = checkPlacement(buildings, unlocked, b.type, b.x);

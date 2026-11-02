@@ -36,13 +36,29 @@ describe('저장과 불러오기', () => {
   };
 
   it('겹친 건물을 거절한다', () => {
-    const text = mutate((s) => s.buildings.push({ uid: 50, type: 'vending', x: 5, tuning: 5, price: 150, rating: 0.5 }));
+    const text = mutate((s) => s.buildings.push({ uid: 50, type: 'vending', x: 5, tuning: 5, price: 150, rating: 0.5, level: 1 }));
     expect(() => parseSave(text)).toThrow(/배치/);
   });
 
   it('잠긴 땅의 건물을 거절한다', () => {
-    const text = mutate((s) => s.buildings.push({ uid: 50, type: 'vending', x: 0, tuning: 5, price: 150, rating: 0.5 }));
+    const text = mutate((s) => s.buildings.push({ uid: 50, type: 'vending', x: 0, tuning: 5, price: 150, rating: 0.5, level: 1 }));
     expect(() => parseSave(text)).toThrow(/공터/);
+  });
+
+  it('v1 저장 파일은 모든 건물을 Lv1로 바꿔 읽는다', () => {
+    const raw = JSON.parse(serializeSave(playedGame().s));
+    raw.version = 1;
+    for (const b of raw.state.buildings) delete b.level;
+    const restored = parseSave(JSON.stringify(raw));
+    expect(restored.buildings.length).toBeGreaterThan(0);
+    expect(restored.buildings.every((b) => b.level === 1)).toBe(true);
+  });
+
+  it('범위를 벗어난 레벨을 거절한다', () => {
+    expect(() => parseSave(mutate((s) => (s.buildings[0].level = 4)))).toThrow(/level/);
+    expect(() => parseSave(mutate((s) => delete s.buildings[0].level))).toThrow(/level/);
+    // 소품(급식소)은 레벨을 올릴 수 없다
+    expect(() => parseSave(mutate((s) => (s.buildings.find((b: { type: string }) => b.type === 'feeder').level = 2)))).toThrow(/level/);
   });
 
   it('범위를 벗어난 가격·알 수 없는 건물을 거절한다', () => {

@@ -1,11 +1,14 @@
 import {
   BUILDINGS,
   INITIAL_UNLOCKED,
+  MAX_SHOP_LEVEL,
   STREET_TILES,
   SYNERGIES,
   TILE_PX,
   UNLOCK_BASE_COST,
   UNLOCK_COST_GROWTH,
+  UPGRADE_CAPACITY,
+  UPGRADE_COST_MUL,
   isShopType,
   type BuildingType,
   type SynergyDef,
@@ -21,6 +24,8 @@ export interface Building {
   price: number;
   /** 평판 0~1 */
   rating: number;
+  /** 가게 레벨 1~MAX_SHOP_LEVEL. 소품은 늘 1이다. */
+  level: number;
 }
 
 export type Check = { ok: true } | { ok: false; reason: string };
@@ -41,6 +46,24 @@ export function doorX(b: Pick<Building, 'type' | 'x'>): number {
 
 export function isShop(b: Building): boolean {
   return isShopType(b.type);
+}
+
+/** 다음 레벨로 올리는 비용. 소품이거나 최고 레벨이면 null. */
+export function upgradeCost(b: Pick<Building, 'type' | 'level'>): number | null {
+  if (!isShopType(b.type) || b.level >= MAX_SHOP_LEVEL) return null;
+  return Math.round((BUILDINGS[b.type].cost * UPGRADE_COST_MUL[b.level - 1]) / 100) * 100;
+}
+
+/** 건설비와 지금까지 들인 업그레이드 비용의 합(철거 환급 기준) */
+export function investedCost(b: Pick<Building, 'type' | 'level'>): number {
+  let total = BUILDINGS[b.type].cost;
+  for (let lv = 1; lv < b.level; lv++) total += upgradeCost({ type: b.type, level: lv }) ?? 0;
+  return total;
+}
+
+/** 동시에 받을 수 있는 손님 수 */
+export function capacityOf(b: Pick<Building, 'type' | 'level'>): number {
+  return BUILDINGS[b.type].capacity + (isShopType(b.type) ? (b.level - 1) * UPGRADE_CAPACITY : 0);
 }
 
 export function buildingAtTile(buildings: readonly Building[], tile: number): Building | undefined {
@@ -138,7 +161,7 @@ export function synergyEffects(buildings: readonly Building[], target: Building)
 
 /** 그 자리에 지으면 새로 생길 시너지(배치 미리보기용) */
 export function previewSynergies(buildings: readonly Building[], type: BuildingType, x: number): ActiveSynergy[] {
-  const ghost: Building = { uid: -1, type, x, tuning: 5, price: 0, rating: 0.5 };
+  const ghost: Building = { uid: -1, type, x, tuning: 5, price: 0, rating: 0.5, level: 1 };
   return activeSynergies([...buildings, ghost]).filter((s) => s.a.uid === -1 || s.b.uid === -1);
 }
 

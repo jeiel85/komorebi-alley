@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CLOSE_TIME, OPEN_TIME, PREP_TIME, START_MONEY, BUILDINGS } from '../src/sim/data.ts';
-import { Game, type SaveState } from '../src/sim/game.ts';
+import { Game, LANES, type SaveState } from '../src/sim/game.ts';
 import { catsToLeave, legendaryEligible, rollCatArrival } from '../src/sim/cats.ts';
 import { Rng } from '../src/sim/rng.ts';
 import type { Building } from '../src/sim/street.ts';
@@ -103,6 +103,60 @@ describe('경영', () => {
     expect(inside!.target).toBeNull();
   });
 
+  it('가게를 업그레이드하면 비용이 들고, 최고 레벨에서 멈춘다', () => {
+    const g = richGame(31);
+    g.place('ramen', 4);
+    g.place('bench', 7);
+    const shop = g.s.buildings.find((b) => b.type === 'ramen')!;
+    const bench = g.s.buildings.find((b) => b.type === 'bench')!;
+    const money = g.s.money;
+    expect(g.upgrade(shop.uid).ok).toBe(true);
+    expect(shop.level).toBe(2);
+    expect(g.s.money).toBe(money - BUILDINGS.ramen.cost * 1.5);
+    expect(g.upgrade(shop.uid).ok).toBe(true);
+    expect(shop.level).toBe(3);
+    expect(g.s.money).toBe(money - BUILDINGS.ramen.cost * 4.5);
+    expect(g.upgrade(shop.uid)).toEqual({ ok: false, reason: '이미 최고 레벨이에요' });
+    expect(g.upgrade(bench.uid).ok).toBe(false);
+    expect(bench.level).toBe(1);
+  });
+
+  it('돈이 모자라면 업그레이드할 수 없다', () => {
+    const g = new Game(32);
+    g.place('ramen', 4);
+    g.s.money = 100;
+    expect(g.upgrade(g.s.buildings[0].uid)).toEqual({ ok: false, reason: '돈이 부족해요' });
+    expect(g.s.buildings[0].level).toBe(1);
+  });
+
+  it('업그레이드한 가게를 철거하면 들인 돈 전체의 절반을 돌려받는다', () => {
+    const g = richGame(33);
+    g.place('bakery', 4);
+    const uid = g.s.buildings[0].uid;
+    g.upgrade(uid);
+    const money = g.s.money;
+    expect(g.demolish(uid).ok).toBe(true);
+    expect(g.s.money).toBe(money + (BUILDINGS.bakery.cost * 2.5) / 2);
+  });
+
+  it('업그레이드한 가게가 같은 날 더 많이 번다', () => {
+    const revenue = (level: number): number => {
+      let sum = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        const g = richGame(seed);
+        g.place('ramen', 7);
+        const uid = g.s.buildings[0].uid;
+        for (let lv = 1; lv < level; lv++) g.upgrade(uid);
+        // 레벨이 올라 지불 의향이 커진 만큼 값을 올린다
+        g.setPrice(uid, 800 * 1.1 ** (level - 1));
+        runDay(g);
+        sum += g.report!.revenue;
+      }
+      return sum;
+    };
+    expect(revenue(3)).toBeGreaterThan(revenue(1) * 1.2);
+  });
+
   it('슬라이더 값은 범위와 가격 단위에 맞춰진다', () => {
     const g = new Game(8);
     g.place('ramen', 4);
@@ -161,8 +215,46 @@ describe('경영', () => {
   });
 });
 
+describe('보도 위 움직임', () => {
+  it('손님이 한 줄로만 걷지 않고 비켜 가고, 구경하고, 가게에서 나와 보도로 돌아간다', () => {
+    const g = richGame(41);
+    for (const [type, x] of [['ramen', 3], ['bakery', 6], ['teahouse', 9], ['taiyaki', 12]] as const) g.place(type, x);
+    g.startBusiness();
+    const firstLane = new Map<number, number>();
+    let laneChanges = 0;
+    let browsed = 0;
+    let leftShop = 0;
+    const seenBrowse = new Set<number>();
+    for (let i = 0; i < 4000 && g.phase === 'business'; i++) {
+      const wasInside = new Set(g.peds.filter((p) => p.state === 'inside' || p.state === 'counter').map((p) => p.id));
+      g.tick(0.25);
+      for (const p of g.peds) {
+        expect(p.lane).toBeGreaterThanOrEqual(0);
+        expect(p.lane).toBeLessThanOrEqual(LANES - 1);
+        if (!firstLane.has(p.id)) firstLane.set(p.id, p.lane);
+        else if (p.state === 'walk' && Math.abs(p.lane - firstLane.get(p.id)!) > 1.5) {
+          laneChanges += 1;
+          firstLane.set(p.id, p.lane);
+        }
+        if (p.state === 'browse' && !seenBrowse.has(p.id)) {
+          seenBrowse.add(p.id);
+          browsed += 1;
+        }
+        if (wasInside.has(p.id) && p.state === 'walk') {
+          leftShop += 1;
+          expect(p.lane).toBeLessThan(1);
+          expect(p.laneTarget).toBeGreaterThanOrEqual(0);
+        }
+      }
+    }
+    expect(laneChanges).toBeGreaterThan(10);
+    expect(browsed).toBeGreaterThan(0);
+    expect(leftShop).toBeGreaterThan(0);
+  });
+});
+
 describe('길고양이', () => {
-  const bld = (uid: number, type: Building['type'], x: number): Building => ({ uid, type, x, tuning: 0, price: 0, rating: 0.5 });
+  const bld = (uid: number, type: Building['type'], x: number): Building => ({ uid, type, x, tuning: 0, price: 0, rating: 0.5, level: 1 });
 
   it('급식소가 없으면 고양이가 오지 않는다', () => {
     const rng = new Rng(1);

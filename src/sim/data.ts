@@ -18,6 +18,16 @@ export const START_HAPPINESS = 60;
 export const UNLOCK_BASE_COST = 6_000;
 export const UNLOCK_COST_GROWTH = 1.45;
 export const DEMOLISH_REFUND = 0.5;
+/** 가게 최고 레벨 */
+export const MAX_SHOP_LEVEL = 3;
+/** 레벨 n → n+1 업그레이드 비용(건설비 대비 배율). 인덱스 0 = Lv1→2 */
+export const UPGRADE_COST_MUL = [1.5, 3] as const;
+/** 레벨 하나당 방문 확률 배율(간판·가게 앞 단장) */
+export const UPGRADE_VISIT_MUL = 1.12;
+/** 레벨 하나당 지불 의향 배율(재료·솜씨가 좋아져 같은 값에도 덜 비싸게 느낀다) */
+export const UPGRADE_PAY_MUL = 1.1;
+/** 레벨 하나당 늘어나는 손님 자리 */
+export const UPGRADE_CAPACITY = 1;
 
 export const PREP_TIME = 9 * 60;
 export const OPEN_TIME = 10 * 60;

@@ -13,6 +13,8 @@ interface Scenario {
   day?: number;
   /** 가게별 슬라이더·가격 배율(기본가 대비) */
   tune?: Partial<Record<BuildingType, { tuning: number; priceMul: number }>>;
+  /** 모든 가게를 이 레벨까지 업그레이드 */
+  level?: number;
 }
 
 const SEEDS = 20;
@@ -31,6 +33,7 @@ function runScenario(sc: Scenario): void {
       if (!res.ok) throw new Error(`${sc.name}: ${type}@${x} ${res.reason}`);
     }
     for (const b of g.s.buildings) {
+      for (let lv = 1; lv < (sc.level ?? 1); lv++) g.upgrade(b.uid);
       const t = sc.tune?.[b.type];
       if (!t) continue;
       g.setTuning(b.uid, t.tuning);
@@ -126,5 +129,16 @@ const scenarios: Scenario[] = [
     ],
   },
 ];
+
+const midTuned = scenarios[5];
+for (const level of [2, 3]) {
+  const mul = 1.1 ** (level - 1);
+  scenarios.push({
+    ...midTuned,
+    name: `중반 배치 8곳 + 조율 + 전부 Lv${level}, 가격 x${mul.toFixed(2)}(봄 맑음)`,
+    level,
+    tune: Object.fromEntries(Object.entries(midTuned.tune!).map(([k, t]) => [k, { tuning: t.tuning, priceMul: t.priceMul * mul }])),
+  });
+}
 
 for (const sc of scenarios) runScenario(sc);
